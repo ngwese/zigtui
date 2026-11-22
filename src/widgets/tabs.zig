@@ -73,6 +73,37 @@ pub const Tabs = struct {
         }
     }
 
+    /// Return the tab index under `(px, py)`, or null if outside any tab title.
+    pub fn hitTest(self: Tabs, area: Rect, px: u16, py: u16) ?usize {
+        if (area.width == 0 or area.height == 0 or self.titles.len == 0) return null;
+        if (py < area.y or py >= area.y + area.height) return null;
+        if (px < area.x or px >= area.x + area.width) return null;
+
+        var x: u16 = area.x;
+        for (self.titles, 0..) |title, i| {
+            if (x >= area.x + area.width) break;
+
+            var title_width: u16 = self.padding;
+            var view = std.unicode.Utf8View.initUnchecked(title);
+            var iter = view.iterator();
+            while (iter.nextCodepoint()) |cp| {
+                const w: u16 = @intCast(codepointWidth(cp));
+                if (w == 0) continue;
+                title_width += w;
+            }
+            title_width += self.padding;
+
+            const tab_end = @min(x + title_width, area.x + area.width);
+            if (px >= x and px < tab_end) return i;
+
+            x = tab_end;
+            if (i + 1 < self.titles.len and x < area.x + area.width) {
+                x += 1; // divider
+            }
+        }
+        return null;
+    }
+
     /// Move selection to the next tab (wraps around).
     pub fn selectNext(self: *Tabs) void {
         if (self.titles.len == 0) return;
@@ -89,6 +120,15 @@ pub const Tabs = struct {
         }
     }
 };
+
+test "Tabs hitTest finds titles" {
+    const tabs = Tabs{ .titles = &.{ "norns", "supercollider" }, .padding = 1 };
+    const area = Rect{ .x = 0, .y = 0, .width = 40, .height = 1 };
+    // " norns " is 7 cols (indices 0..6), divider at 7, then " supercollider "
+    try std.testing.expectEqual(@as(?usize, 0), tabs.hitTest(area, 3, 0));
+    try std.testing.expectEqual(@as(?usize, 1), tabs.hitTest(area, 10, 0));
+    try std.testing.expectEqual(@as(?usize, null), tabs.hitTest(area, 3, 1));
+}
 
 test "Tabs selectNext wraps" {
     var tabs = Tabs{ .titles = &.{ "A", "B", "C" }, .selected = 2 };
